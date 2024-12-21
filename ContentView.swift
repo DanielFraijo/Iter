@@ -1,4 +1,46 @@
 import SwiftUI
+import Combine
+
+class HabitModel: ObservableObject {
+    @Published var habits: [Habit] = [Habit(name: "Water Intake")]
+    
+    // Constructor to load data from UserDefaults
+    init() {
+        if let data = UserDefaults.standard.data(forKey: "habits") {
+            do {
+                habits = try JSONDecoder().decode([Habit].self, from: data)
+            } catch {
+                print("Failed to decode habits from UserDefaults: \(error)")
+            }
+        }
+    }
+    
+    func addHabit(name: String) {
+        habits.append(Habit(name: name))
+        save()
+    }
+    
+    // Save to UserDefaults
+    private func save() {
+        do {
+            let encodedData = try JSONEncoder().encode(habits)
+            UserDefaults.standard.set(encodedData, forKey: "habits")
+        } catch {
+            print("Failed to encode habits to UserDefaults: \(error)")
+        }
+    }
+}
+
+struct YourApp: App {
+    @StateObject private var habitModel = HabitModel()
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(habitModel)
+        }
+    }
+}
 
 struct ContentView: View {
     var body: some View {
@@ -63,34 +105,38 @@ struct SectionView: View {
     }
 }
 
-struct Habit: Identifiable {
+struct Habit: Identifiable, Codable {
     let id = UUID()
     var name: String
 }
 
 struct HabitsView: View {
-    @State private var currentDate = Date()
-    @State private var habits = [Habit(name: "Water Intake")]  // Initial habit
+    @EnvironmentObject var habitModel: HabitModel
     @State private var newHabitName = ""
 
     var body: some View {
         VStack {
             // List of habits
             ScrollView {
-                ForEach(habits) { habit in
+                ForEach(habitModel.habits) { habit in
                     VStack {
                         // Habit name
                         Text(habit.name)
                             .font(.title)
                             .padding()
-                            .background(Color.white)
-                            .foregroundColor(.black)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.black)
                             .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.white, lineWidth: 1)
+                            )
                         
                         // Days of the week with dates for each habit
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 5) {
                             ForEach(0..<8) { index in
-                                let date = Calendar.current.date(byAdding: .day, value: index, to: currentDate.startOfWeek)!
+                                let date = Calendar.current.date(byAdding: .day, value: index, to: Date().startOfWeek)!
                                 let day = Calendar.current.component(.weekday, from: date)
                                 let dayAbbreviation = Calendar.current.shortWeekdaySymbols[day - 1]
                                 let dayNumber = Calendar.current.component(.day, from: date)
@@ -98,12 +144,14 @@ struct HabitsView: View {
                                 VStack {
                                     Text(dayAbbreviation)
                                         .font(.caption)
+                                        .foregroundColor(.black)
                                     Text(String(dayNumber))
                                         .font(.headline)
+                                        .foregroundColor(.white)
                                 }
                                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 50)
                                 .background(Color.white.opacity(0.1))
-                                .cornerRadius(8)
+                                .cornerRadius(20)
                             }
                         }
                         .padding()
@@ -116,7 +164,10 @@ struct HabitsView: View {
             HStack {
                 TextField("Enter new habit", text: $newHabitName)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                Button(action: addHabit) {
+                Button(action: {
+                    habitModel.addHabit(name: newHabitName)
+                    newHabitName = ""
+                }) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.white)
                 }
@@ -135,13 +186,6 @@ struct HabitsView: View {
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .navigationBarBackButtonHidden(false)
-    }
-
-    private func addHabit() {
-        if !newHabitName.isEmpty {
-            habits.append(Habit(name: newHabitName))
-            newHabitName = ""
-        }
     }
 }
 
@@ -212,4 +256,5 @@ struct FinancesView: View {
 
 #Preview {
     ContentView()
+        .environmentObject(HabitModel())
 }
