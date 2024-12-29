@@ -1,8 +1,9 @@
 import SwiftUI
 import Combine
+import Charts
 
 struct DailyInteraction: Codable {
-    var day: Date // Changed to Date for better tracking
+    var day: Date
     var interacted: Bool
 }
 
@@ -12,11 +13,80 @@ struct Habit: Identifiable, Codable {
     var dailyInteractions: [DailyInteraction] = []
 }
 
+struct Task: Identifiable, Codable {
+    let id = UUID()
+    var title: String
+    var note: String = ""
+}
+
+struct CalorieGoal: Codable {
+    var dailyGoal: Int
+}
+
+struct FinancialData: Codable {
+    var monthlyIncome: Double
+}
+
+struct CalorieData: Codable {
+    var goal: Int
+    var consumed: Int
+    var burned: Int
+    
+    var remaining: Int {
+        goal - (consumed - burned)
+    }
+}
+
 class HabitModel: ObservableObject {
-    @Published var habits: [Habit] = [Habit(name: "Water Intake")]
+    @Published var habits: [Habit] = []
+    @Published var tasks: [Task] = []
+    @Published var calorieGoal = CalorieGoal(dailyGoal: 0)
+    @Published var financialData = FinancialData(monthlyIncome: 0.0)
+    @Published var calorieData = CalorieData(goal: 0, consumed: 0, burned: 0)
     
     // Constructor to load data from UserDefaults
     init() {
+        loadHabits()
+        loadTasks()
+        loadCalorieGoal()
+        loadFinancialData()
+        loadCalorieData() // Load calorie data
+    }
+    
+    // Habits methods
+    func addHabit(name: String) {
+        habits.append(Habit(name: name))
+        saveHabits()
+    }
+    
+    func toggleInteraction(for habit: Habit, on date: Date) {
+        if let index = habits.firstIndex(where: { $0.id == habit.id }) {
+            if let interactionIndex = habits[index].dailyInteractions.firstIndex(where: { Calendar.current.isDate($0.day, inSameDayAs: date) }) {
+                habits[index].dailyInteractions[interactionIndex].interacted.toggle()
+            } else {
+                habits[index].dailyInteractions.append(DailyInteraction(day: date, interacted: true))
+            }
+            saveHabits()
+        }
+    }
+    
+    func deleteHabit(_ habit: Habit) {
+        if let index = habits.firstIndex(where: { $0.id == habit.id }) {
+            habits.remove(at: index)
+            saveHabits()
+        }
+    }
+    
+    private func saveHabits() {
+        do {
+            let data = try JSONEncoder().encode(habits)
+            UserDefaults.standard.set(data, forKey: "habits")
+        } catch {
+            print("Failed to encode habits to UserDefaults: \(error)")
+        }
+    }
+    
+    private func loadHabits() {
         if let data = UserDefaults.standard.data(forKey: "habits") {
             do {
                 habits = try JSONDecoder().decode([Habit].self, from: data)
@@ -26,30 +96,120 @@ class HabitModel: ObservableObject {
         }
     }
     
-    func addHabit(name: String) {
-        habits.append(Habit(name: name))
-        save()
+    // Tasks methods
+    func addTask(title: String, note: String = "") {
+        tasks.append(Task(title: title, note: note))
+        saveTasks()
     }
     
-    // Toggle interaction state for a specific day of a habit
-    func toggleInteraction(for habit: Habit, on date: Date) {
-        if let index = habits.firstIndex(where: { $0.id == habit.id }) {
-            if let interactionIndex = habits[index].dailyInteractions.firstIndex(where: { Calendar.current.isDate($0.day, inSameDayAs: date) }) {
-                habits[index].dailyInteractions[interactionIndex].interacted.toggle()
-            } else {
-                habits[index].dailyInteractions.append(DailyInteraction(day: date, interacted: true))
-            }
-            save()
+    func removeTasks(at offsets: IndexSet) {
+        tasks.remove(atOffsets: offsets)
+        saveTasks()
+    }
+    
+    func updateTask(_ task: Task) {
+        if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+            tasks[index] = task
+            saveTasks()
         }
     }
     
-    // Save to UserDefaults, now including daily interaction states
-    private func save() {
+    private func saveTasks() {
         do {
-            let encodedData = try JSONEncoder().encode(habits)
-            UserDefaults.standard.set(encodedData, forKey: "habits")
+            let data = try JSONEncoder().encode(tasks)
+            UserDefaults.standard.set(data, forKey: "tasks")
         } catch {
-            print("Failed to encode habits to UserDefaults: \(error)")
+            print("Failed to encode tasks to UserDefaults: \(error)")
+        }
+    }
+    
+    private func loadTasks() {
+        if let data = UserDefaults.standard.data(forKey: "tasks") {
+            do {
+                tasks = try JSONDecoder().decode([Task].self, from: data)
+            } catch {
+                print("Failed to decode tasks from UserDefaults: \(error)")
+            }
+        }
+    }
+    
+    // Calorie Goal methods
+    func setCalorieGoal(_ goal: Int) {
+        calorieGoal.dailyGoal = goal
+        calorieData.goal = goal
+        saveCalorieData()
+    }
+    
+    func addConsumedCalories(_ calories: Int) {
+        calorieData.consumed += calories
+        saveCalorieData()
+    }
+    
+    func addBurnedCalories(_ calories: Int) {
+        calorieData.burned += calories
+        saveCalorieData()
+    }
+    
+    fileprivate func saveCalorieData() {
+        do {
+            let data = try JSONEncoder().encode(calorieData)
+            UserDefaults.standard.set(data, forKey: "calorieData")
+        } catch {
+            print("Failed to encode calorie data to UserDefaults: \(error)")
+        }
+    }
+    
+    private func loadCalorieData() {
+        if let data = UserDefaults.standard.data(forKey: "calorieData") {
+            do {
+                calorieData = try JSONDecoder().decode(CalorieData.self, from: data)
+            } catch {
+                print("Failed to decode calorie data from UserDefaults: \(error)")
+            }
+        }
+    }
+    
+    private func saveCalorieGoal() {
+        do {
+            let data = try JSONEncoder().encode(calorieGoal)
+            UserDefaults.standard.set(data, forKey: "calorieGoal")
+        } catch {
+            print("Failed to encode calorie goal to UserDefaults: \(error)")
+        }
+    }
+    
+    private func loadCalorieGoal() {
+        if let data = UserDefaults.standard.data(forKey: "calorieGoal") {
+            do {
+                calorieGoal = try JSONDecoder().decode(CalorieGoal.self, from: data)
+            } catch {
+                print("Failed to decode calorie goal from UserDefaults: \(error)")
+            }
+        }
+    }
+    
+    // Financial Data methods
+    func setMonthlyIncome(_ income: Double) {
+        financialData.monthlyIncome = income
+        saveFinancialData()
+    }
+    
+    private func saveFinancialData() {
+        do {
+            let data = try JSONEncoder().encode(financialData)
+            UserDefaults.standard.set(data, forKey: "financialData")
+        } catch {
+            print("Failed to encode financial data to UserDefaults: \(error)")
+        }
+    }
+    
+    private func loadFinancialData() {
+        if let data = UserDefaults.standard.data(forKey: "financialData") {
+            do {
+                financialData = try JSONDecoder().decode(FinancialData.self, from: data)
+            } catch {
+                print("Failed to decode financial data from UserDefaults: \(error)")
+            }
         }
     }
 }
@@ -168,18 +328,25 @@ struct HabitsView: View {
                                         VStack {
                                             Text(dayAbbreviation)
                                                 .font(.caption)
+                                                .foregroundColor(interacted ? .black : .white)
                                             Text(String(dayNumber))
                                                 .font(.headline)
+                                                .foregroundColor(interacted ? .black : .white)
                                         }
                                         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 50)
                                         .background(interacted ? Color.green : Color.white.opacity(0.1))
                                         .cornerRadius(20)
-                                        .foregroundColor(interacted ? .black : .white)
                                     }
                                 }
                             }
                             .padding()
                         }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(action: { habitModel.deleteHabit(habit) }) {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(.red)
                     }
                     .padding(.bottom)
                 }
@@ -189,6 +356,7 @@ struct HabitsView: View {
             HStack {
                 TextField("Enter new habit", text: $newHabitName)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .foregroundColor(.white)
                 Button(action: {
                     habitModel.addHabit(name: newHabitName)
                     newHabitName = ""
@@ -221,14 +389,14 @@ struct HabitsView: View {
     }
 }
 
-// Helper extension to get the start of the week from any date remains unchanged
+// Helper extension to get the start of the week from any date
 extension Date {
     var startOfWeek: Date {
         return Calendar.current.date(from: Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: self))!
     }
 }
 
-// New Habit Detail View
+// Habit Detail View
 struct HabitDetailView: View {
     let habit: Habit
     
@@ -243,8 +411,8 @@ struct HabitDetailView: View {
                 .font(.body)
                 .foregroundColor(.white)
             
-            NavigationLink(destination: HabitSummaryView(year: Calendar.current.component(.year, from: Date()))) {
-                Text("View Summary")
+            NavigationLink(destination: HabitContributionView(habit: habit)) {
+                Text("View Contribution")
                     .padding()
                     .background(Color.blue)
                     .foregroundColor(.white)
@@ -265,124 +433,305 @@ struct HabitDetailView: View {
     }
 }
 
-struct HabitSummaryView: View {
-    @EnvironmentObject var habitModel: HabitModel
-    let year: Int
+struct HabitContributionView: View {
+    let habit: Habit
+    @State private var year: Int = Calendar.current.component(.year, from: Date())
     
     var body: some View {
         VStack {
-            Text("Habit Summary for \(year)")
+            Text("\(habit.name) - \(year)")
                 .font(.title)
                 .foregroundColor(.white)
             
-            let calendar = Calendar.current
-            let startDate = DateComponents(year: year, month: 1, day: 1).date!
-            let daysInYear = isLeapYear(year) ? 366 : 365 // Changed here
-
+            Picker("Year", selection: $year) {
+                ForEach(2020...year, id: \.self) { year in
+                    Text("\(year)")
+                        .foregroundColor(.white)
+                }
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding()
+            
             ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(1...12, id: \.self) { month in
-                        Text(calendar.monthSymbols[month - 1])
-                            .font(.headline)
-                            .foregroundColor(.white)
-                        
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
-                            ForEach(1...daysInMonth(month: month, year: year), id: \.self) { day in
-                                let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.date(from: DateComponents(year: year, month: month, day: 1))!)!
-                                let interacted = habitModel.habits.flatMap { $0.dailyInteractions }.contains { Calendar.current.isDate($0.day, inSameDayAs: date) && $0.interacted }
-                                
-                                Rectangle()
-                                    .fill(interacted ? Color.green : Color.gray)
-                                    .frame(width: 20, height: 20)
-                            }
+                VStack {
+                    HStack {
+                        ForEach(Calendar.current.shortWeekdaySymbols, id: \.self) { day in
+                            Text(day)
+                                .frame(maxWidth: .infinity)
+                                .font(.caption)
+                                .foregroundColor(.white)
                         }
                     }
+                    
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 7), spacing: 1) {
+                        ForEach(daysInYear(year), id: \.self) { date in
+                            let interacted = habit.dailyInteractions.contains { interaction in
+                                let interactionDay = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month, .day], from: interaction.day)) ?? Date.distantPast
+                                return Calendar.current.isDate(date, inSameDayAs: interactionDay) && interaction.interacted
+                            }
+                            Rectangle()
+                                .fill(interacted ? Color.green : Color.gray.opacity(0.2))
+                                .frame(width: 20, height: 20)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+                                )
+                                .onTapGesture {
+                                    print("Interacted on: \(date)")
+                                }
+                        }
+                    }
+                    .padding()
                 }
             }
         }
         .background(Color.black.edgesIgnoringSafeArea(.all))
     }
     
-    func daysInMonth(month: Int, year: Int) -> Int {
-        let dateComponents = DateComponents(year: year, month: month)
-        if let date = Calendar.current.date(from: dateComponents) {
-            return Calendar.current.range(of: .day, in: .month, for: date)?.count ?? 0
+    private func daysInYear(_ year: Int) -> [Date] {
+        var dates: [Date] = []
+        let calendar = Calendar.current
+        var date = DateComponents(year: year, month: 1, day: 1).date!
+        while calendar.component(.year, from: date) == year {
+            dates.append(date)
+            date = calendar.date(byAdding: .day, value: 1, to: date) ?? date
         }
-        return 0
-    }
-    
-    func isLeapYear(_ year: Int) -> Bool {
-        return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+        return dates
     }
 }
-    
-    func daysInMonth(month: Int, year: Int) -> Int {
-        let dateComponents = DateComponents(year: year, month: month)
-        if let date = Calendar.current.date(from: dateComponents) {
-            return Calendar.current.range(of: .day, in: .month, for: date)?.count ?? 0
-        }
-        return 0
-    }
-    
-    func isLeapYear(_ year: Int) -> Bool {
-        return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
-    }
 
-// Placeholder for To Do View
 struct ToDoView: View {
+    @EnvironmentObject var habitModel: HabitModel
+    @State private var newTaskTitle = ""
+    @State private var selectedTask: Task?
+    @State private var isEditing = false
+    @State private var editedNote = ""
+
     var body: some View {
-        Text("To Do Screen")
-            .font(.largeTitle)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black.edgesIgnoringSafeArea(.all))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("To Do")
+        VStack {
+            List {
+                ForEach(habitModel.tasks) { task in
+                    NavigationLink(destination: TaskDetailView(task: task, onSave: habitModel.updateTask)) {
+                        HStack {
+                            Text(task.title)
+                                .foregroundColor(.white)
+                            Spacer()
+                            if !task.note.isEmpty {
+                                Image(systemName: "note.text")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+                }
+                .onDelete(perform: habitModel.removeTasks)
+                .listRowBackground(Color.black)
+            }
+            .listStyle(InsetGroupedListStyle())
+            .background(Color.black)
+            
+            HStack {
+                TextField("New Task", text: $newTaskTitle)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .foregroundColor(.white)
+                Button(action: addTask) {
+                    Image(systemName: "plus.circle.fill")
                         .foregroundColor(.white)
                 }
             }
-            .toolbarBackground(Color.black, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .padding()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.edgesIgnoringSafeArea(.all))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("To Do")
+                    .foregroundColor(.white)
+            }
+        }
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+    
+    private func addTask() {
+        if !newTaskTitle.isEmpty {
+            habitModel.addTask(title: newTaskTitle)
+            newTaskTitle = ""
+        }
+    }
+}
+
+struct TaskDetailView: View {
+    let task: Task
+    var onSave: (Task) -> Void
+    @State private var note = ""
+
+    var body: some View {
+        Form {
+            TextField("Title", text: Binding(
+                get: { task.title },
+                set: { onSave(Task(title: $0, note: note)) }
+            ))
+            .foregroundColor(.white)
+            
+            TextEditor(text: $note)
+                .frame(minHeight: 200)
+                .border(Color.gray, width: 1)
+                .foregroundColor(.white)
+                .onChange(of: note) { newValue in
+                    onSave(Task(title: task.title, note: newValue))
+                }
+                .onAppear {
+                    self.note = task.note
+                }
+        }
+        .navigationTitle(task.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(task.title)
+                    .foregroundColor(.white)
+            }
+        }
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
 struct CalorieIntakeView: View {
+    @EnvironmentObject var habitModel: HabitModel
+    @State private var goalInput = ""
+    @State private var consumedInput = ""
+    @State private var burnedInput = ""
+
     var body: some View {
-        Text("Calorie Intake Screen")
-            .font(.largeTitle)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black.edgesIgnoringSafeArea(.all))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Calorie Intake")
-                        .foregroundColor(.white)
+        VStack {
+            // Input fields for setting goal, consumed, and burned calories
+            HStack {
+                TextField("Goal", text: $goalInput)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .foregroundColor(.white)
+                Button("Set") {
+                    if let goal = Int(goalInput) {
+                        habitModel.setCalorieGoal(goal)
+                        goalInput = ""
+                    }
                 }
             }
-            .toolbarBackground(Color.black, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .padding()
+
+            HStack {
+                TextField("Consumed", text: $consumedInput)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .foregroundColor(.white)
+                Button("Add") {
+                    if let calories = Int(consumedInput) {
+                        habitModel.addConsumedCalories(calories)
+                        consumedInput = ""
+                    }
+                }
+            }
+            .padding()
+
+            HStack {
+                TextField("Burned", text: $burnedInput)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .foregroundColor(.white)
+                Button("Add") {
+                    if let calories = Int(burnedInput) {
+                        habitModel.addBurnedCalories(calories)
+                        burnedInput = ""
+                    }
+                }
+            }
+            .padding()
+            
+            // Visual Representation
+            VStack {
+                Text("Calories Left: \(max(habitModel.calorieData.remaining, 0))")
+                    .foregroundColor(.white)
+                
+                Chart {
+                    BarMark(
+                        x: .value("Category", "Goal"),
+                        y: .value("Calories", habitModel.calorieData.goal)
+                    )
+                    .foregroundStyle(.blue)
+                    
+                    BarMark(
+                        x: .value("Category", "Consumed"),
+                        y: .value("Calories", habitModel.calorieData.consumed)
+                    )
+                    .foregroundStyle(.red)
+                    
+                    BarMark(
+                        x: .value("Category", "Burned"),
+                        y: .value("Calories", habitModel.calorieData.burned)
+                    )
+                    .foregroundStyle(.green)
+                }
+                .frame(height: 200)
+            }
+            
+            // Reset button
+            Button("Reset Today's Data") {
+                habitModel.calorieData.consumed = 0
+                habitModel.calorieData.burned = 0
+                habitModel.saveCalorieData()
+            }
+            .padding()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.edgesIgnoringSafeArea(.all))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Calorie Intake")
+                    .foregroundColor(.white)
+            }
+        }
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
 struct FinancesView: View {
+    @EnvironmentObject var habitModel: HabitModel
+    @State private var inputIncome = ""
+
     var body: some View {
-        Text("Finances Screen")
-            .font(.largeTitle)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black.edgesIgnoringSafeArea(.all))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Finances")
-                        .foregroundColor(.white)
+        VStack {
+            TextField("Monthly Income", text: $inputIncome)
+                .keyboardType(.decimalPad)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .foregroundColor(.white)
+                .padding()
+                .onChange(of: inputIncome) { newValue in
+                    if let income = Double(newValue) {
+                        habitModel.setMonthlyIncome(income)
+                    }
                 }
+            
+            Text("Current Monthly Income: $\(String(format: "%.2f", habitModel.financialData.monthlyIncome))")
+                .foregroundColor(.white)
+                .padding()
+            
+            // Here you can add more financial tracking features.
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.edgesIgnoringSafeArea(.all))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Finances")
+                    .foregroundColor(.white)
             }
-            .toolbarBackground(Color.black, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
